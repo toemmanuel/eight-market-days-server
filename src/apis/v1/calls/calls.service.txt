@@ -1,0 +1,121 @@
+// src/modules/calls/calls.service.ts
+
+import { Injectable } from '@nestjs/common';
+import { Server, Socket } from 'socket.io';
+import Redis from 'ioredis';
+import { FirebaseService } from 'src/firebase/firebase.service';
+import {
+  CallAcceptedPayload,
+  CallEndedPayload,
+  IncomingCallPushPayload,
+} from 'src/types';
+
+@Injectable()
+export class CallsService {
+  private redis = new Redis();
+
+  private sockets = new Map<string, Socket>();
+
+  constructor(private firebase: FirebaseService) {}
+
+  registerSocket(client: Socket) {
+    const userId = client.handshake.query.userId as string;
+    this.sockets.set(userId, client);
+
+    this.redis.set(`user:${userId}:status`, 'online');
+    this.redis.set(`user:${userId}:socket`, client.id);
+  }
+
+  removeSocket(client: Socket) {
+    const userId = client.handshake.query.userId as string;
+    this.sockets.delete(userId);
+
+    this.redis.set(`user:${userId}:status`, 'offline');
+  }
+
+  // 📞 INITIATE CALL
+  async initiateCall(client: Socket, data: IncomingCallPushPayload) {
+    const { callerId, calleeId, callId } = data;
+
+    const calleeStatus = await this.redis.get(`user:${calleeId}:status`);
+
+    const calleeSocketId = await this.redis.get(`user:${calleeId}:socket`);
+
+    // 🟢 IF ONLINE → SOCKET EVENT
+    if (calleeStatus === 'online' && calleeSocketId) {
+      client.to(calleeSocketId).emit('call:incoming', {
+        callId,
+        callerId,
+      });
+    }
+
+    // 🔴 IF OFFLINE → PUSH NOTIFICATION
+    if (calleeStatus !== 'online') {
+      const token = await this.redis.get(`user:${calleeId}:fcmToken`);
+
+      if (!token) return;
+
+      await this.firebase.sendPush(token, data);
+    }
+
+    // Save call state
+    await this.redis.set(
+      `call:${callId}`,
+      JSON.stringify({
+        callerId,
+        calleeId,
+        status: 'ringing',
+      }),
+    );
+  }
+
+  // 📞 ACCEPT CALL
+  async acceptCall(client: Socket, data: CallAcceptedPayload) {
+    const { callId } = data;
+
+    const callData = await this.redis.get(`call:${callId}`);
+    if (!callData) {
+      throw new Error('Call not found');
+    }
+    const call = JSON.parse(callData);
+
+    const callerSocketId = await this.redis.get(`user:${call.callerId}:socket`);
+
+    if (callerSocketId) {
+      client.to(callerSocketId).emit('call:accepted', {
+        callId,
+      });
+    }
+
+    await this.redis.hset(`call:${callId}`, 'status', 'active');
+  }
+
+  // ❌ END CALL
+  async endCall(data: CallEndedPayload) {
+    const { callId } = data;
+
+    const callData = await this.redis.get(`call:${callId}`);
+    if (!callData) {
+      throw new Error('Call not found');
+    }
+    const call = JSON.parse(callData);
+
+    const callerSocketId = await this.redis.get(`user:${call.callerId}:socket`);
+
+    const calleeSocketId = await this.redis.get(`user:${call.calleeId}:socket`);
+
+    if (callerSocketId) {
+      this.sockets.get(call.callerId)?.emit('call:ended', {
+        callId,
+      });
+    }
+
+    if (calleeSocketId) {
+      this.sockets.get(call.calleeId)?.emit('call:ended', {
+        callId,
+      });
+    }
+
+    await this.redis.del(`call:${callId}`);
+  }
+}
