@@ -19,7 +19,9 @@ export class FirebaseService {
     await admin.messaging().send({
       token,
 
-      data: payload,
+      data: Object.fromEntries(
+        Object.entries(payload).map(([k, v]) => [k, String(v)]),
+      ),
 
       android: {
         priority: 'high',
@@ -34,7 +36,11 @@ export class FirebaseService {
 
         payload: {
           aps: {
-            'content-available': 1,
+            sound: 'default',
+            alert: {
+              title: 'Incoming Call',
+              body: String(payload.callerName ?? 'Incoming call'),
+            },
           },
         },
       },

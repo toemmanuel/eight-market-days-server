@@ -3,6 +3,10 @@ import { IsEnum, IsNotEmpty, IsString, ValidateIf } from 'class-validator';
 export class InitiateCallDto {
   @IsString()
   @IsNotEmpty()
+  callId!: string;
+
+  @IsString()
+  @IsNotEmpty()
   callerId!: string;
 
   @IsString()

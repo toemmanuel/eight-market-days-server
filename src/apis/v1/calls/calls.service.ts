@@ -49,11 +49,10 @@ export class CallsService {
   async initiateCall(payload: InitiateCallPayload) {
     const redis = this.redisService.redis;
 
-    const { callerId, calleeId, callType } = payload;
+    const { callerId, calleeId, callType, callId = uuidv4() } = payload;
 
     // Use callerId, get Caller details from DB
 
-    const callId = uuidv4();
     const roomId = `RM-${generateRandomNumber({ length: 30 })}`;
     const callerName = 'John Doe'; // Name from DB
 
@@ -106,6 +105,8 @@ export class CallsService {
       roomId,
 
       callerId,
+
+      calleeId,
 
       callerName,
 
