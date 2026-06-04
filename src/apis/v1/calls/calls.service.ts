@@ -46,19 +46,66 @@ export class CallsService {
     await redis.set(`user:${userId}:status`, 'offline');
   }
 
+  private scheduleCallTimeout({
+    callId,
+    callerName,
+    callerSocketId,
+    calleeSocketId,
+  }: {
+    callId: string;
+    callerName: string;
+    callerSocketId: string | null;
+    calleeSocketId: string | null;
+  }) {
+    setTimeout(async () => {
+      const redis = this.redisService.redis;
+
+      const sessionData = await redis.get(`call:${callId}`);
+
+      if (!sessionData) return;
+
+      const session: CallSession = JSON.parse(sessionData);
+
+      if (session.status !== 'ringing') return;
+
+      session.status = 'timeout';
+
+      const payload = {
+        ...session,
+        callerName,
+        reason: 'timeout',
+      };
+
+      if (calleeSocketId) {
+        this.server.to(calleeSocketId).emit('call:timeout', payload);
+      }
+
+      if (callerSocketId) {
+        this.server.to(callerSocketId).emit('call:timeout', payload);
+      }
+
+      await this.endCall({
+        callId,
+        reason: 'timeout',
+      });
+    }, 30_000);
+  }
+
   async initiateCall(payload: InitiateCallPayload) {
     const redis = this.redisService.redis;
 
     const { callerId, calleeId, callType, callId = uuidv4() } = payload;
 
-    // Use callerId, get Caller details from DB
-
     const roomId = `RM-${generateRandomNumber({ length: 30 })}`;
-    const callerName = 'John Doe'; // Name from DB
 
-    const existingCallee = await redis.get(`user:${calleeId}:activeCall`);
+    // TODO: Fetch from DB
+    const callerName = 'John Doe';
 
-    if (existingCallee) {
+    const activeCallKey = `user:${calleeId}:activeCall`;
+
+    const existingCall = await redis.get(activeCallKey);
+
+    if (existingCall) {
       throw new BadRequestException('User already in another call');
     }
 
@@ -72,21 +119,30 @@ export class CallsService {
       startedAt: Date.now(),
     };
 
-    await redis.set(`call:${callId}`, JSON.stringify(callSession));
+    await Promise.all([
+      redis.set(`call:${callId}`, JSON.stringify(callSession)),
+      redis.set(`user:${callerId}:activeCall`, callId),
+      redis.set(`user:${calleeId}:activeCall`, callId),
+    ]);
 
-    // Auto-expire after 60s
-    await redis.expire(`call:${callId}`, 60);
-    await redis.expire(`user:${callerId}:activeCall`, 60);
-    await redis.expire(`user:${calleeId}:activeCall`, 60);
+    const [calleeStatus, calleeSocketId, callerSocketId] = await Promise.all([
+      redis.get(`user:${calleeId}:status`),
+      redis.get(`user:${calleeId}:socket`),
+      redis.get(`user:${callerId}:socket`),
+    ]);
 
-    const calleeStatus = await redis.get(`user:${calleeId}:status`);
-
-    const calleeSocketId = await redis.get(`user:${calleeId}:socket`);
+    this.scheduleCallTimeout({
+      callId,
+      callerName,
+      callerSocketId,
+      calleeSocketId,
+    });
 
     if (calleeStatus === 'online' && calleeSocketId) {
-      this.server
-        .to(calleeSocketId)
-        .emit('call:incoming', { ...callSession, callerName });
+      this.server.to(calleeSocketId).emit('call:incoming', {
+        ...callSession,
+        callerName,
+      });
 
       return;
     }
@@ -99,19 +155,12 @@ export class CallsService {
 
     await this.firebaseService.sendIncomingCallPush(token, {
       type: 'incoming_call',
-
       callId,
-
       roomId,
-
       callerId,
-
       calleeId,
-
       callerName,
-
       callType,
-
       timestamp: Date.now().toString(),
     });
   }
@@ -131,11 +180,18 @@ export class CallsService {
 
     session.status = 'active';
 
+    const callerId = session.callerId;
+    const calleeId = session.calleeId;
+
     session.answeredAt = Date.now();
 
     // Set call session
 
-    await redis.set(`call:${callId}`, JSON.stringify(session));
+    await Promise.all([
+      await redis.set(`call:${callId}`, JSON.stringify(session)),
+      await redis.set(`user:${callerId}:activeCall`, JSON.stringify(callerId)),
+      await redis.set(`user:${calleeId}:activeCall`, JSON.stringify(calleeId)),
+    ]);
 
     const callerSocketId = await redis.get(`user:${session.callerId}:socket`);
 
@@ -169,24 +225,34 @@ export class CallsService {
 
     session.endedAt = Date.now();
 
-    const callerSocketId = await redis.get(`user:${session.callerId}:socket`);
-
-    const calleeSocketId = await redis.get(`user:${session.calleeId}:socket`);
+    const [callerSocketId, calleeSocketId] = await Promise.all([
+      await redis.get(`user:${session.callerId}:socket`),
+      await redis.get(`user:${session.calleeId}:socket`),
+    ]);
 
     if (callerSocketId) {
+      console.log(
+        'Emitting call end to caller',
+        session.callerId,
+        payload.reason,
+      );
       this.server.to(callerSocketId).emit('call:ended', payload);
     }
 
     if (calleeSocketId) {
+      console.log(
+        'Emitting call end to callee',
+        session.calleeId,
+        payload.reason,
+      );
       this.server.to(calleeSocketId).emit('call:ended', payload);
     }
 
     // cleanup active call markers
-    await redis.del(`user:${session.callerId}:activeCall`);
-
-    await redis.del(`user:${session.calleeId}:activeCall`);
-
-    // cleanup call
-    await redis.del(`call:${payload.callId}`);
+    await Promise.all([
+      await redis.del(`user:${session.callerId}:activeCall`),
+      await redis.del(`user:${session.calleeId}:activeCall`),
+      redis.del(`call:${payload.callId}`),
+    ]);
   }
 }
