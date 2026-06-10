@@ -31,7 +31,9 @@ export interface EndCallPayload {
 // }
 
 export interface WebRTCSignalPayload {
-  to: string;
+  to: string; // Recipient
+
+  from: string; // Sender - ADD THIS
 
   callId: string;
 

@@ -100,6 +100,7 @@ export class CallsService {
 
     // TODO: Fetch from DB
     const callerName = 'John Doe';
+    const calleeName = 'Kelly John';
 
     const activeCallKey = `user:${calleeId}:activeCall`;
 
@@ -160,6 +161,7 @@ export class CallsService {
       callerId,
       calleeId,
       callerName,
+      calleeName,
       callType,
       timestamp: Date.now().toString(),
     });
@@ -198,6 +200,8 @@ export class CallsService {
     if (callerSocketId) {
       this.server.to(callerSocketId).emit('call:accepted', {
         callId,
+        calleeId,
+        callerId,
       });
     }
   }
@@ -205,9 +209,23 @@ export class CallsService {
   async relaySignal(payload: WebRTCSignalPayload) {
     const redis = this.redisService.redis;
 
+    console.log('PAYLOAD::', payload);
+
+    const sessionData = await redis.get(`call:${payload.callId}`);
+
+    if (!sessionData) {
+      throw new BadRequestException('Call session expired');
+    }
+
     const socketId = await redis.get(`user:${payload.to}:socket`);
 
     if (!socketId) return;
+
+    const senderSocketId = await redis.get(`user:${payload.from}:socket`);
+    if (senderSocketId === socketId) {
+      console.log('⚠️ Would send to self - skipping');
+      return;
+    }
 
     this.server.to(socketId).emit('webrtc:signal', payload);
   }

@@ -30,6 +30,10 @@ export class WebRTCSignalDto {
 
   @IsString()
   @IsNotEmpty()
+  from!: string;
+
+  @IsString()
+  @IsNotEmpty()
   callId!: string;
 
   @IsEnum(['offer', 'answer', 'candidate'])
