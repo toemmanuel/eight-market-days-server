@@ -14,6 +14,7 @@ import {
   AcceptCallDto,
   EndCallDto,
   InitiateCallDto,
+  SwitchToVideoCallDto,
   WebRTCSignalDto,
 } from './call.dto';
 
@@ -64,6 +65,11 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('call:end')
   async end(@MessageBody() body: EndCallDto) {
     return this.callsService.endCall(body);
+  }
+
+  @SubscribeMessage('call:request-video')
+  async switchToVideo(@MessageBody() body: SwitchToVideoCallDto) {
+    return this.callsService.switchCallToVideo(body);
   }
 
   @SubscribeMessage('webrtc:signal')

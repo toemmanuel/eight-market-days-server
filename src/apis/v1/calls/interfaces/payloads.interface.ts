@@ -18,17 +18,11 @@ export interface EndCallPayload {
   reason: 'ended' | 'rejected' | 'missed' | 'timeout';
 }
 
-// export interface WebRTCSignalPayload {
-//   to: string;
+export interface SwitchToVideoCallPayload {
+  callId: string;
 
-//   callId: string;
-
-//   type: 'offer' | 'answer' | 'candidate';
-
-//   sdp?: any;
-
-//   candidate?: any;
-// }
+  to: string;
+}
 
 export interface WebRTCSignalPayload {
   to: string; // Recipient

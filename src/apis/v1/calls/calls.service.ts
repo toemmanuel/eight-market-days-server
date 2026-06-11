@@ -9,6 +9,7 @@ import {
   AcceptCallPayload,
   EndCallPayload,
   InitiateCallPayload,
+  SwitchToVideoCallPayload,
   WebRTCSignalPayload,
 } from './interfaces/payloads.interface';
 
@@ -259,5 +260,15 @@ export class CallsService {
       await redis.del(`user:${session.calleeId}:activeCall`),
       redis.del(`call:${payload.callId}`),
     ]);
+  }
+
+  async switchCallToVideo(payload: SwitchToVideoCallPayload) {
+    const redis = this.redisService.redis;
+
+    const toSocketId = await redis.get(`user:${payload.to}:socket`);
+
+    if (toSocketId) {
+      this.server.to(toSocketId).emit('call:requesting-video', payload);
+    }
   }
 }

@@ -1,4 +1,10 @@
-import { IsEnum, IsNotEmpty, IsString, ValidateIf } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsNotEmpty,
+  IsString,
+  ValidateIf,
+} from 'class-validator';
 
 export class InitiateCallDto {
   @IsString()
@@ -55,4 +61,14 @@ export class EndCallDto {
 
   @IsEnum(['ended', 'rejected', 'missed', 'timeout'])
   reason!: 'ended' | 'rejected' | 'missed' | 'timeout';
+}
+
+export class SwitchToVideoCallDto {
+  @IsString()
+  @IsNotEmpty()
+  callId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  to!: string;
 }
