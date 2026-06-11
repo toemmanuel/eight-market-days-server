@@ -210,6 +210,8 @@ export class CallsService {
   async relaySignal(payload: WebRTCSignalPayload) {
     const redis = this.redisService.redis;
 
+    console.log('Payload::', payload);
+
     const sessionData = await redis.get(`call:${payload.callId}`);
 
     if (!sessionData) {
