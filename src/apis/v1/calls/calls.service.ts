@@ -209,8 +209,6 @@ export class CallsService {
   async relaySignal(payload: WebRTCSignalPayload) {
     const redis = this.redisService.redis;
 
-    console.log('PAYLOAD::', payload);
-
     const sessionData = await redis.get(`call:${payload.callId}`);
 
     if (!sessionData) {
@@ -223,7 +221,6 @@ export class CallsService {
 
     const senderSocketId = await redis.get(`user:${payload.from}:socket`);
     if (senderSocketId === socketId) {
-      console.log('⚠️ Would send to self - skipping');
       return;
     }
 
@@ -249,20 +246,10 @@ export class CallsService {
     ]);
 
     if (callerSocketId) {
-      console.log(
-        'Emitting call end to caller',
-        session.callerId,
-        payload.reason,
-      );
       this.server.to(callerSocketId).emit('call:ended', payload);
     }
 
     if (calleeSocketId) {
-      console.log(
-        'Emitting call end to callee',
-        session.calleeId,
-        payload.reason,
-      );
       this.server.to(calleeSocketId).emit('call:ended', payload);
     }
 
